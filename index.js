@@ -61,3 +61,69 @@ const results = [];
     //console.log(csv);
     
 })();
+import cheerio from "cheerio";
+import axios from "axios";
+import { parse } from 'json2csv';
+import fs from 'fs';
+import open from 'open'; // Import the 'open' package
+
+const url = "https://gse.com.gh/press-releases/";
+
+async function mainurl() {
+  try {
+    const res = await axios(url);
+    const $ = cheerio.load(res.data);
+    const dataele = $(".nectar-post-grid-item");
+    const results = [];
+
+    for (const ele of dataele) {
+      const name = $(ele).find("span.meta-category>a");
+      const company_name = name.text().trim();
+
+      const date_ele = $(ele).find("span.meta-date");
+      const date = date_ele.text();
+
+      const head_ele = $(ele).find(".post-heading>a:nth-child(1)");
+      const pressnote = head_ele.text();
+
+      const pdfbase = $(ele).find("a.nectar-post-grid-link").attr("href");
+
+      results.push({ company_name, date, pressnote, pdfbase });
+    }
+
+    await innnerurl(results);
+  } catch (error) {
+    console.error("Error in mainurl:", error);
+  }
+}
+
+async function innnerurl(results) {
+  try {
+    for (const ele of results) {
+      const res = await axios(ele.pdfbase);
+      const $ = cheerio.load(res.data);
+      const pdflink = $("div.content-inner")
+        .find("figure>iframe.embed-pdf-viewer.lazyload")
+        .attr("data-src");
+      
+      // Download the PDF
+      if (pdflink) {
+        const pdfFileName = ele.company_name + "_" + ele.date + ".pdf"; // You can adjust the file naming as per your needs
+        const pdfResponse = await axios({ method: "get", url: pdflink, responseType: "stream" });
+        const pdfStream = pdfResponse.data;
+        const writeStream = fs.createWriteStream(pdfFileName);
+        pdfStream.pipe(writeStream);
+
+        writeStream.on("finish", () => {
+          console.log(`Downloaded: ${pdfFileName}`);
+          // Open the downloaded PDF file
+          //open(pdfFileName);
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error in innnerurl:", error);
+  }
+}
+
+mainurl();
